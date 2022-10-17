@@ -1,0 +1,19 @@
+# R files ####
+.RData
+.Rhistory
+.Ruserdata
+.Rproj.user
+
+# OS-generated files ####
+.DS_Store
+.DS_Store?
+
+# outputs ####
+*.docx
+*.xlsx
+*.jpg
+*.jpeg
+*.png
+*.JPG
+*.gif
+*.tiff
