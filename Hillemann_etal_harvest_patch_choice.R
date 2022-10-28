@@ -51,7 +51,7 @@ na2dummy <- function(data){
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
-N = 300              # N hunting trips
+N = 3000              # N hunting trips
 K = 7                # K patch types
 J = 25               # J harvester
 Y_pc <- rep(NA, N)   # Y response patch choice
@@ -132,14 +132,16 @@ dd$gender_id = ifelse( dd$gender=="m", 1 , 2 ) # 1-male, 2-female
 # i.e., use different schedules by season and gender
 # (instead of using a vector of length K, and adding gender and season as effects)
 # note, some patches are winter-only, others are summer-only, some can be chosen year-round
+# the centered probability distribution for patch choice for season i and gender j is
+# softmax(WA[,i,j])
 WA <- array(NA, dim = c(K, 2, 2))
-WA[ ,1,1] <- c(-2, -2, -2,  1,  1, 1.2, 0)    # season1, gender1
-WA[ ,1,2] <- c(-2, -2, -2,  1,  1, 0.2, 0)    # season1, gender2
-WA[ ,2,1] <- c( 1,  1,  1, -2, -2, 1.2, 0)    # season2, gender1
-WA[ ,2,2] <- c( 1,  1,  1, -2, -2, 0.2, 0)    # season2, gender2
+WA[ ,1,1] <- c(-200, -200, -200,  1,  1, 1.2, 0)    # season1, gender1
+WA[ ,1,2] <- c(-200, -200, -200,  1,  1, 0.2, 0)    # season1, gender2
+WA[ ,2,1] <- c( 1,  1,  1, 1.2, -200, -200, 0)    # season2, gender1
+WA[ ,2,2] <- c( 1,  1,  1, 0.2, -200, -200, 0)    # season2, gender2
 
 
-## set patch success probability intercepts
+## set patch success probability intercepts (as log-odds)
 WS <- array(NA, dim = c(K, 2, 2))
 WS[ ,1,1] <- logit(c(0.01, 0.01, 0.01, 0.5 , 0.6 , 0.8, 0))    # season1, gender1
 WS[ ,1,2] <- logit(c(0.01, 0.01, 0.01, 0.6 , 0.7 , 0.8, 0))    # season1, gender2
@@ -198,18 +200,18 @@ table(dd$patch_id, dd$season)
 # not ideal that all patches can be chosen in any season
 # can we weigh the effect of season more?
 
-for (n in 1:N) {
-  A <- WA[ , dd$season_id[n], dd$gender_id[n]] * 10 +
-    fAge[ ,dd$age_cat[n]] +
-    bIn*dd$income_s[n] +
-    bDeI*dd$indegree_s[n] +
-    bDeO*dd$outdegree_s[n] +
-    bNh*dd$Nhunt_s[n]
-  Y_pc[n] <- sample(1:K, 1, prob = softmax(A))
-}
+# for (n in 1:N) {
+#   A <- WA[ , dd$season_id[n], dd$gender_id[n]] * 10 +
+#     fAge[ ,dd$age_cat[n]] +
+#     bIn*dd$income_s[n] +
+#     bDeI*dd$indegree_s[n] +
+#     bDeO*dd$outdegree_s[n] +
+#     bNh*dd$Nhunt_s[n]
+#   Y_pc[n] <- sample(1:K, 1, prob = softmax(A))
+# }
 
-dd$patch_id <- Y_pc
-table(dd$patch_id, dd$season)
+# dd$patch_id <- Y_pc
+# table(dd$patch_id, dd$season)
 
 #__________________________________________________
 ## Y_hs: simulate harvest success data
@@ -611,74 +613,34 @@ traceplot(mm_hs, pars="bDeI")
 
 # compare estimated and actual probabilities of each choice
 post_hs <- extract.samples(mm_hs)
-hs_true <- hs_est <- hs_lb <- hs_ub <- array(NA, dim=c(N,K,2,2))
+hs_true <- hs_est <- hs_lb <- hs_ub <- rep(NA, length.out = N)
 
-for (g in 1:length(unique(dd$gender)) ) {
-  for (s in 1:length(unique(dd$season)) ) { 
-    for (n in 1:N) {
-      
-      # use true patch attraction intercepts to calculate true prob of patch choice
-      hs_true[n, ,s,g] <- logistic ( WS[ ,s,g] +
-                                      fAge[ ,dd$age_cat[n]] +
-                                      bIn*dd$income_s[n] + 
-                                      bDeI*dd$indegree_s[n] + 
-                                      bDeO*dd$outdegree_s[n] +
-                                      bNh*dd$Nhunt_s[n] )
-      
-      # use posterior attraction weights to calculate estimate of posterior prob of patch choice
-      S <- post_hs$WS[ ,  , s, g] +
-            post_hs$fAge[ , , dd$age_cat[n]] + 
-            post_hs$bIn*dd$income_s[n] + 
-            post_hs$bDeI*dd$indegree_s[n] +
-            post_hs$bDeO*dd$outdegree_s[n] + 
-            post_hs$bNh*dd$Nhunt_s[n]
-      hs_n <- t(apply(S, 1, logistic))
-      hs_est[n, ,s,g] <- apply(hs_n, 2, mean)
-      hs_lb[n, ,s,g] <- apply(hs_n, 2, rethinking::HPDI)[1,]
-      hs_ub[n, ,s,g] <- apply(hs_n, 2, rethinking::HPDI)[2,]
-      if (n %% 100 == 0) print(n)
-    }
-  }
-}
-
-
-# >>> check #####
-
-# so this doesn't make sense and it doesn't look great
-# but why? too many things mixed together?!
-plot(hs_true, hs_est, xlim = c(0, 1), ylim = c(0, 1))
-abline(0, 1)
 for (n in 1:N) {
-  for (k in 1:K) {
-    for (g in 1:length(unique(dd$gender)) ) {
-      for (s in 1:length(unique(dd$season)) ) { 
-        lines(c(hs_true[n,k,s,g], hs_true[n,k,s,g]), c(hs_lb[n,k,s,g], hs_ub[n,k,s,g]))
-      }
-    }
-  }
+  # use true patch attraction intercepts to calculate true prob of patch choice
+  hs_true[n] <- logistic ( WS[dd$patch_id[n], dd$season_id[n], dd$gender_id[n]] +
+                                  fAge[dd$patch_id[n], dd$age_cat[n]] +
+                                  bIn[dd$patch_id[n]]*dd$income_s[n] + 
+                                  bDeI[dd$patch_id[n]]*dd$indegree_s[n] + 
+                                  bDeO[dd$patch_id[n]]*dd$outdegree_s[n] +
+                                  bNh[dd$patch_id[n]]*dd$Nhunt_s[n] )
+  
+  # use posterior attraction weights to calculate estimate of posterior prob of patch choice
+  S <- post_hs$WS[ , dd$patch_id[n], dd$season_id[n], dd$gender_id[n]] +
+        post_hs$fAge[ , dd$patch_id[n], dd$age_cat[n]] + 
+        post_hs$bIn[dd$patch_id[n]]*dd$income_s[n] + 
+        post_hs$bDeI[dd$patch_id[n]]*dd$indegree_s[n] +
+        post_hs$bDeO[dd$patch_id[n]]*dd$outdegree_s[n] + 
+        post_hs$bNh[dd$patch_id[n]]*dd$Nhunt_s[n]
+  pr_hs_n <- logistic(S)
+  hs_est[n] <- mean(pr_hs_n)
+  hs_lb[n] <- rethinking::HPDI(pr_hs_n)[1]
+  hs_ub[n] <- rethinking::HPDI(pr_hs_n)[2]
+  if (n %% 100 == 0) print(n)
 }
 
-# ... this is better, right? (note all patches are plotted although some are/should be impossible in a given season (see other "check" comment))
-plot( apply(post_hs$WS[,,1,1], 2, mean), WS[,1,1] )
-text( apply(post_hs$WS[,,1,1], 2, mean), WS[,1,1], cex=0.5, pos=2 )
+plot(hs_true, hs_est, xlim = c(0, 1), ylim = c(0, 1))
 abline(0, 1, lty = 2)
-
-plot( apply(post_hs$WS[,,2,1], 2, mean),  WS[,2,1] )
-text( apply(post_hs$WS[,,2,1], 2, mean), WS[,2,1], cex=0.5, pos=2 )
-abline(0, 1, lty = 2)
-
-# ... and then I plot true vs estimated effect of specific covariates?
-# plot true vs estimated bIn
-plot(bIn, apply(post_hs$bIn, 2, mean))
-text(bIn, apply(post_hs$bIn, 2, mean), labels=c(1:7), cex=0.8, pos=1)
-abline(0, 1, lty = 2)
-bIn_lb <- apply(post_hs$bIn, 2, HPDI)[1, ]
-bIn_ub <- apply(post_hs$bIn, 2, HPDI)[2, ]
-for (k in seq_len(K)) {
-  lines(c( bIn[k], bIn[k] ), c( bIn_lb[k], bIn_ub[k] ))
-}
-
-
+for (i in 1:N) lines(c(hs_true[i], hs_true[i]), c(hs_lb[i], hs_ub[i]), col = col.alpha("dodgerblue", 0.2))
 
 
 
