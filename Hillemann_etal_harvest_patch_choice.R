@@ -221,10 +221,11 @@ dd$harvest <- Y_hs
 
 #__________________________________________________
 ## missing value imputation in Stan
+dd$income_s_complete <- dd$income_s
 # realistically, we may not have income data for everyone
 j_id_incomplete <- sample(J, size=sample(2,1))
-ppl$income[ppl$j_id %in% j_id_incomplete] <- NA
-dd$income_s[dd$j_id %in% ppl$j_id[is.na(ppl$income)] ] <- NA
+ppl$income_s[ppl$j_id %in% j_id_incomplete] <- NA
+dd$income_s[dd$j_id %in% ppl$j_id[is.na(ppl$income_s)] ] <- NA
 
 # store count of missing values (missN) and index of missing values (missDEX)
 names(which(colSums(is.na(dd)) > 0))
@@ -284,6 +285,8 @@ traceplot(mm_pc, pars="fAge")
 traceplot(mm_pc, pars=c("bDeI", "bDeO"))
 traceplot(mm_pc, pars="bNh")
 
+stopifnot(1 == 2)
+
 
 ## compare estimated and actual probabilities of each choice
 post_pc <- extract.samples(mm_pc)
@@ -293,7 +296,7 @@ for (n in 1:N) {
   # calculate true prob of patch choice
   pc_true[n,] <- softmax( WA[,dd$season_id[n],dd$gender_id[n]] + # intercept
                                   fAge[ ,dd$age_cat[n]] +
-                                  bIn*dd$income_s[n] +
+                                  bIn*dd$income_s_complete[n] +
                                   bDeI*dd$indegree_s[n] +
                                   bDeO*dd$outdegree_s[n] +
                                   bNh*dd$Nhunt_s[n] )
@@ -301,7 +304,7 @@ for (n in 1:N) {
   # calculate estimate of posterior prob of patch choice
   A <- post_pc$WA[ , , dd$season_id[n], dd$gender_id[n]] + # intercept
         post_pc$fAge[ , , dd$age_cat[n]] +
-        post_pc$bIn*dd$income_s[n] +
+        post_pc$bIn * post_pc$income_merge[,n] +
         post_pc$bDeI*dd$indegree_s[n] +
         post_pc$bDeO*dd$outdegree_s[n] +
         post_pc$bNh*dd$Nhunt_s[n]
@@ -342,13 +345,14 @@ traceplot(mm_hs, pars="bDeI")
 post_hs <- extract.samples(mm_hs)
 hs_true <- hs_est <- hs_lb <- hs_ub <- rep(NA, length.out = N)
 
+# [-] modify the plots to include the imputed income values, NOT the 999
 
 for (n in 1:N) {
 
   # use true patch attraction intercepts to calculate true prob of harvest success
   hs_true[n] <- logistic ( WS[dd$patch_id[n], dd$season_id[n], dd$gender_id[n]] +
                                   fAge[dd$patch_id[n], dd$age_cat[n]] +
-                                  bIn[dd$patch_id[n]]*dd$income_s[n] + 
+                                  bIn[dd$patch_id[n]]*dd$income_s_complete[n] + 
                                   bDeI[dd$patch_id[n]]*dd$indegree_s[n] + 
                                   bDeO[dd$patch_id[n]]*dd$outdegree_s[n] +
                                   bNh[dd$patch_id[n]]*dd$Nhunt_s[n] )
@@ -356,7 +360,7 @@ for (n in 1:N) {
   # use posterior attraction weights to calculate estimate of posterior prob of harvest success
   S <- post_hs$WS[ , dd$patch_id[n], dd$season_id[n], dd$gender_id[n]] +
         post_hs$fAge[ , dd$patch_id[n], dd$age_cat[n]] + 
-        post_hs$bIn[, dd$patch_id[n]]*dd$income_s[n] + 
+        post_hs$bIn[, dd$patch_id[n]]* post_hs$income_merge[,n] + 
         post_hs$bDeI[, dd$patch_id[n]]*dd$indegree_s[n] +
         post_hs$bDeO[, dd$patch_id[n]]*dd$outdegree_s[n] + 
         post_hs$bNh[, dd$patch_id[n]]*dd$Nhunt_s[n]
