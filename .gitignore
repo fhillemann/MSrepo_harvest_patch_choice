@@ -17,3 +17,12 @@
 *.JPG
 *.gif
 *.tiff
+*.pdf
+
+# compiled binary of stan program
+m_hs
+m_pc
+
+# except the stan code itself
+!m_hs.stan
+!m_pc.stan

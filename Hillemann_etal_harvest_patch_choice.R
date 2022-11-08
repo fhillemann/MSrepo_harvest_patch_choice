@@ -11,6 +11,9 @@
 #______________________________________________________________________________________________________
 
 
+options(warnPartialMatchDollar=TRUE) 
+# squawks if you refer to a variable in a data frame that only partially matches 
+
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 #                                              xxxx
@@ -51,7 +54,9 @@ na2dummy <- function(data){
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
-N = 3000              # N hunting trips
+set.seed(1)
+
+N = 300              # N hunting trips
 K = 7                # K patch types
 J = 25               # J harvester
 Y_pc <- rep(NA, N)   # Y response patch choice
@@ -101,7 +106,7 @@ ppl$outdegree_s <- (ppl$outdegree - mean(ppl$outdegree) ) / sd(ppl$outdegree)
 
 #__________________________________________________
 ## send people harvesting
-# to draw IDs, dgeom works well to reflect that few people go out a lot, most only occacionally 
+# to draw IDs, dgeom works well to reflect that few people go out a lot, most only occasionally 
 # plot( dgeom( c(1:J), prob=0.2) )
 j_once <- c(1:J) # making sure each hunter shows up at least once
 dd$j_id <- sample(c( j_once , sample( c(1:J), size=N-length(j_once), replace=TRUE, prob=dgeom(c(1:J), 0.2))))
@@ -111,14 +116,14 @@ dd$income_s <- ppl$income_s[match(dd$j_id, ppl$j_id)]
 dd$indegree_s <- ppl$indegree_s[match(dd$j_id, ppl$j_id)]
 dd$outdegree_s <- ppl$outdegree_s[match(dd$j_id, ppl$j_id)]
 
-# group size, standardised
-Nhunt <- sample(c(1:10), size=N, replace=TRUE, prob = (dgeom(c(1:10), prob=0.3)) )
-dd$Nhunt_s <- (Nhunt - mean(Nhunt)) / sd(Nhunt)
+# create hunt group size + standardise
+dd$Nhunt <- sample(c(1:10), size=N, replace=TRUE, prob = (dgeom(c(1:10), prob=0.3)) )
+dd$Nhunt_s <- (dd$Nhunt - mean(dd$Nhunt)) / sd(dd$Nhunt)
 
 
 #__________________________________________________
 # prepare data for Stan
-# Stan needs integer IDs as input (1:x instead of charcter strings)
+# Stan needs integer IDs as input (1:x instead of character strings)
 # e.g., if patch data were entered as "winter marine" etc, or j_id as "ID01" etc
 # dd$patch_id <- as.integer(as.factor( dd$patch_cat )) 
 # dd$hunter_id <- as.integer(as.factor( dd$j_id ))
@@ -143,10 +148,10 @@ WA[ ,2,2] <- c( 1,  1,  1, 0.2, -200, -200, 0)    # season2, gender2
 
 ## set patch success probability intercepts (as log-odds)
 WS <- array(NA, dim = c(K, 2, 2))
-WS[ ,1,1] <- logit(c(0.01, 0.01, 0.01, 0.5 , 0.6 , 0.8, 0))    # season1, gender1
-WS[ ,1,2] <- logit(c(0.01, 0.01, 0.01, 0.6 , 0.7 , 0.8, 0))    # season1, gender2
-WS[ ,2,1] <- logit(c(0.4 , 0.6 , 0.5 , 0.01, 0.01, 0.7, 0))    # season2, gender1
-WS[ ,2,2] <- logit(c(0.6 , 0.7 , 0.5 , 0.01, 0.01, 0.7, 0))    # season2, gender2
+WS[ ,1,1] <- logit(c(0, 0, 0, 0.1 , 0.6 , 0.8, 0.2))    # season1, gender1
+WS[ ,1,2] <- logit(c(0, 0, 0, 0.6 , 0.7 , 0.8, 0.25))    # season1, gender2
+WS[ ,2,1] <- logit(c(0.3 , 0.6 , 0.5 , 0.2, 0, 0, 0.8))    # season2, gender1
+WS[ ,2,2] <- logit(c(0.6 , 0.7 , 0.6 , 0.1, 0, 0, 0.3))    # season2, gender2
 
 
 ## set other effects
@@ -195,24 +200,6 @@ for (n in 1:N) {
 
 dd$patch_id <- Y_pc
 
-# >>> check: all patches can be chosen in any season ####
-table(dd$patch_id, dd$season)
-# not ideal that all patches can be chosen in any season
-# can we weigh the effect of season more?
-
-# for (n in 1:N) {
-#   A <- WA[ , dd$season_id[n], dd$gender_id[n]] * 10 +
-#     fAge[ ,dd$age_cat[n]] +
-#     bIn*dd$income_s[n] +
-#     bDeI*dd$indegree_s[n] +
-#     bDeO*dd$outdegree_s[n] +
-#     bNh*dd$Nhunt_s[n]
-#   Y_pc[n] <- sample(1:K, 1, prob = softmax(A))
-# }
-
-# dd$patch_id <- Y_pc
-# table(dd$patch_id, dd$season)
-
 #__________________________________________________
 ## Y_hs: simulate harvest success data
 
@@ -237,12 +224,12 @@ dd$harvest <- Y_hs
 # realistically, we may not have income data for everyone
 j_id_incomplete <- sample(J, size=sample(2,1))
 ppl$income[ppl$j_id %in% j_id_incomplete] <- NA
-dd$income[dd$j_id %in% ppl$j_id[is.na(ppl$income)] ] <- NA
+dd$income_s[dd$j_id %in% ppl$j_id[is.na(ppl$income)] ] <- NA
 
 # store count of missing values (missN) and index of missing values (missDEX)
 names(which(colSums(is.na(dd)) > 0))
-missn_income <- sum(is.na(dd$income))
-missdex_income <- which(is.na(dd$income))
+missn_income <- sum(is.na(dd$income_s))
+missdex_income <- which(is.na(dd$income_s))
 
 # replace NAs with 999 (or any other arbitraty number)
 dd <- na2dummy(dd)
@@ -253,14 +240,14 @@ dd <- na2dummy(dd)
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx####
 #                                              xxxx
-# fit model                                    ####
+# fit models                                   ####
 #                                              xxxx
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ## set number of chains and iterations
-ch=1
-it=1000
+ch=3
+it=2000
 
 
 # data list for Stan
@@ -287,136 +274,8 @@ datlist = list(N = N,                    # number of harvest episodes,
 #                                              xxxx
 #__________________________________________________
 
-dear_stan = '
-data {
-  int<lower=0> N;                    // number of observations, i.e. harvest episodes
-  int<lower=2> K;                    // number of patch types [Kategorien]
-  int<lower=1,upper=K> Y_pc[N];      // Y, choice of patch type ID
-  // covariates
-  int<lower=1,upper=2> season[N];    // 1-ice, 2-no ice
-  int<lower=1,upper=2> gender[N];    // 1-male, 2-female
-  int<lower=1> age_cat[N];           // age category
-  int<lower=1> N_age_cats;           // number of age categories
-  real age_cat_index[N_age_cats];    // 1 to N_age_cats; cov_exp_quad needs real
-  real income[N];                    // income, standardised
-  real indegree[N];                  // indegree, standardised
-  real outdegree[N];                 // outdegree, standardised
-  real Nhunt[N];                     // group size, number of hunters on trip, standardised
-  
-  // missing values
-  int<lower=1> missn_income;          // number of missing values
-  int missdex_income[missn_income];   // index of missing values in vector
-  
-}
-transformed data {
-  real delta = 1e-9; // add to the diagonal of the GP age covariance matrix to ensure positive definite values
-}
-parameters {
-  matrix [2,2] WA[K];  // Kx2x2 array holding intercepts for each patch
-  real bIn[K];			    // fixed effect for income
-  real bDeI[K];		    // fixed effect for indegree  
-  real bDeO[K];		    // fixed effect for outdegree  
-  real bNh[K];			    // fixed effect for group size
-  
-  // Gaussian process model - age
-  vector<lower=0>[K] alpha;
-  vector<lower=0>[K] rho;
-  vector[N_age_cats] eta; // scaling factor
-  
-  // impute missing values - income
-  real mu_income;
-  real<lower=0> sigma_income;
-  vector[missn_income] income_impute;
-}
-transformed parameters {
-  
-  matrix[K, N_age_cats] fAge;
-  
-  // impute missing values - income
-  real income_merge[N];
-  income_merge = income;
-  for (i in 1:missn_income) income_merge[missdex_income[i]] = income_impute[i];
-  // // alternatively use the merge_missing function (top of script):
-    // real income_merge = merge_missing(missdex_income, to_vector(income), income_impute);
-  
-  // latent variable Gaussian process - age
-  for (k in 1:K){
-    matrix[N_age_cats, N_age_cats] L_cov;
-    matrix[N_age_cats, N_age_cats] cov = cov_exp_quad(age_cat_index, alpha[k], rho[k]); //covariance matrix
-    
-    // diagonal elements
-    for (n in 1:N_age_cats) {
-      cov[n, n] = cov[n, n] + delta;
-    }
-    
-    L_cov = cholesky_decompose(cov);
-    fAge[k, ] = to_row_vector( L_cov * eta );
-  }
-}
-model{
-  // priors 
-  for (s in 1:2){
-    for (g in 1:2){
-      to_vector(WA[ ,s,g]) ~ normal(0, 0.5); // patch choice intercept, by season and gender
-    }
-  }
-  bIn ~ normal(0,0.5);    // income
-  bDeI ~ normal(0,0.5);   // indegree
-  bDeO ~ normal(0,0.5);   // outdegree
-  bNh ~ normal(0,0.5);    // group size
-  
-  // priors for Gaussian process model - age
-  alpha ~ normal(0, 0.5); // std_normal() is same as ~ normal(0, 1);
-  rho ~ inv_gamma(5, 5);
-  eta ~ normal(0, 0.5); // std_normal();
-  
-  // priors for missing values imputation - income
-  sigma_income ~ cauchy(0, 1);
-  mu_income ~ normal(0.5, 1);
-  income_merge ~ normal(mu_income, sigma_income);
-  
-  // Likelihood functions for each patch choice model
-  for ( n in 1:N ) {
-    vector[K] A;
-    for ( k in 1:(K-1) ) { 
-      A[k] = WA[k,season[n],gender[n]]
-      + fAge[k, age_cat[n]]
-      + bIn[k] * income_merge[n]
-      + bDeI[k] * indegree[n]
-      + bDeO[k] * outdegree[n]
-      + bNh[k] * Nhunt[n];
-    }
-    A[K] = 0;  // K-1 handling
-    
-    // multinomial logistic regression
-    target += categorical_logit_lpmf( Y_pc[n] | A );  // same as Y_pc[n] ~ categorical_logit( A ); 
-  }
-}
-generated quantities{
-  vector[N] log_lik_pc;
-  
-  for ( n in 1:N ) {
-    vector[K] A;
-    for ( k in 1:(K-1) ) { 
-      A[k] = WA[k,season[n],gender[n]]
-      + fAge[k, age_cat[n]]
-      + bIn[k] * income_merge[n]
-      + bDeI[k] * indegree[n]
-      + bDeO[k] * outdegree[n]
-      + bNh[k] * Nhunt[n];
-    }
-    A[K] = 0;  // K-1 handling
-    
-    // generate the likelihood of each observation, conditional on the model
-    log_lik_pc[n] = categorical_logit_lpmf( Y_pc[n] | A ); 
-    
-  }
-}
-'
-
 # run Stan model
-mm_pc <- stan(model_code=dear_stan, data=datlist, chains=ch, iter=it, warmup=200)
-#mm_pc <- stan(file=paste0(here(),"/m_pc.stan"), data=datlist, chains=ch, iter=it, warmup=200)
+mm_pc <- stan(file=paste0(here(),"/m_pc.stan"), data=datlist, chains=ch, iter=it, warmup=200)
 
 ## explore sampling behavior and assess mixing across Markov chains
 traceplot(mm_pc, pars="WA")
@@ -428,51 +287,40 @@ traceplot(mm_pc, pars="bNh")
 
 ## compare estimated and actual probabilities of each choice
 post_pc <- extract.samples(mm_pc)
-pc_true <- pc_est <- pc_lb <- pc_ub <- array(NA, dim=c(N,K,2,2))
+pc_true <- pc_est <- pc_lb <- pc_ub <- matrix(NA, nrow = N, ncol = K)
 
-for (g in 1:length(unique(dd$gender)) ) {
-  for (s in 1:length(unique(dd$season)) ) { 
-    for (n in 1:N) {
-      
-      # calculate true prob of patch choice
-      pc_true[n, ,s,g] <- softmax( WA[ ,s,g] + # intercept
-                                     fAge[ ,dd$age_cat[n]] +
-                                     bIn*dd$income_s[n] +
-                                     bDeI*dd$indegree_s[n] +
-                                     bDeO*dd$outdegree_s[n] +
-                                     bNh*dd$Nhunt_s[n] )
-      
-      # calculate estimate of posterior prob of patch choice
-      A <- post_pc$WA[ ,  , s, g] + # intercept
-            post_pc$fAge[ , , dd$age_cat[n]] +
-            post_pc$bIn*dd$income_s[n] +
-            post_pc$bDeI*dd$indegree_s[n] +
-            post_pc$bDeO*dd$outdegree_s[n] +
-            post_pc$bNh*dd$Nhunt_s[n]
-      pc_n <- t(apply(A, 1, softmax))
-      pc_est[n, ,s,g] <- apply(pc_n, 2, mean)
-      pc_lb[n, ,s,g] <- apply(pc_n, 2, rethinking::HPDI)[1,]
-      pc_ub[n, ,s,g] <- apply(pc_n, 2, rethinking::HPDI)[2,]
-      if (n %% 100 == 0) print(n)
-    }
-  }
+for (n in 1:N) {  
+  # calculate true prob of patch choice
+  pc_true[n,] <- softmax( WA[,dd$season_id[n],dd$gender_id[n]] + # intercept
+                                  fAge[ ,dd$age_cat[n]] +
+                                  bIn*dd$income_s[n] +
+                                  bDeI*dd$indegree_s[n] +
+                                  bDeO*dd$outdegree_s[n] +
+                                  bNh*dd$Nhunt_s[n] )
+  
+  # calculate estimate of posterior prob of patch choice
+  A <- post_pc$WA[ , , dd$season_id[n], dd$gender_id[n]] + # intercept
+        post_pc$fAge[ , , dd$age_cat[n]] +
+        post_pc$bIn*dd$income_s[n] +
+        post_pc$bDeI*dd$indegree_s[n] +
+        post_pc$bDeO*dd$outdegree_s[n] +
+        post_pc$bNh*dd$Nhunt_s[n]
+  pc_n <- t(apply(A, 1, softmax))
+  pc_est[n, ] <- apply(pc_n, 2, mean)
+  pc_lb[n, ] <- apply(pc_n, 2, rethinking::HPDI)[1,]
+  pc_ub[n, ] <- apply(pc_n, 2, rethinking::HPDI)[2,]
+  if (n %% 100 == 0) print(n)
 }
 
-
-plot(pc_true, pc_est, xlim = c(0, 0.5), ylim = c(0, 0.5))
+plot(pc_true, pc_est, xlim = c(0, 0.8), ylim = c(0, 0.8),
+  xlab = "true probability of choice", ylab = "estimated probability of choice",
+  main = "patch choice model, simulated parameter recovery")
 abline(0, 1)
 for (n in 1:N) {
   for (k in 1:K) {
-    for (g in 1:length(unique(dd$gender)) ) {
-      for (s in 1:length(unique(dd$season)) ) { 
-        lines(c(pc_true[n,k,s,g], pc_true[n,k,s,g]), c(pc_lb[n,k,s,g], pc_ub[n,k,s,g]))
-      }
-    }
+    lines(c(pc_true[n,k], pc_true[n,k]), c(pc_lb[n,k], pc_ub[n,k]), col = gray(0.5, 0.5))
   }
 }
-
-
-
 
 
 #__________________________________________________
@@ -481,129 +329,8 @@ for (n in 1:N) {
 #                                              xxxx
 #__________________________________________________
 
-dear_stan='
-data {
-  int<lower=0> N;                    // number of observations, i.e. harvest episodes
-  int<lower=2> K;                    // number of patch types [Kategorien]
-  int<lower=0,upper=1> Y_hs[N];      // harvest success Y/N
-  // covariates
-  int<lower=1,upper=K> Y_pc[N];      // chosen patch type ID
-  int<lower=1,upper=2> season[N];    // 1-ice, 2-no ice
-  int<lower=1,upper=2> gender[N];    // 1-male, 2-female
-  int<lower=1> age_cat[N];           // age category
-  int<lower=1> N_age_cats;           // number of age categories
-  real age_cat_index[N_age_cats];    // 1 to N_age_cats; cov_exp_quad needs real
-  real income[N];                    // income, standardised
-  real indegree[N];                  // indegree, standardised
-  real outdegree[N];                 // outdegree, standardised
-  real Nhunt[N];                     // group size, number of hunters on trip, standardised
-   
-  // missing values
-  int<lower=1> missn_income;          // number of missing values 
-  int missdex_income[missn_income];   // index of missing values in vector
-  
-}
-transformed data {
-  real delta = 1e-9; // add to the diagonal of the GP age covariance matrix to ensure positive definite values
-}
-parameters {
-   matrix [2,2] WS[K]; // Kx2x2 array holding intercepts
-   vector[K] bIn;      // effect of income
-   vector[K] bDeI;	   // effect for indegree  
-   vector[K] bDeO;	   // effect for outdegree  
-   vector[K] bNh;			 // effect for group size
-   
-  // Gaussian process model - age
-  vector<lower=0>[K] alpha;
-  vector<lower=0>[K] rho;
-  vector[N_age_cats] eta; // scaling factor
-   
-  // impute missing values - income
-  real mu_income;
-  real<lower=0> sigma_income;
-  vector[missn_income] income_impute;
-}
-transformed parameters {
-   
-  matrix[K, N_age_cats] fAge;
-   
-  // impute missing values
-  real income_merge[N];
-  income_merge = income;
-  for (i in 1:missn_income) income_merge[missdex_income[i]] = income_impute[i];
-   
-  // latent variable Gaussian process
-  for (k in 1:K){
-    matrix[N_age_cats, N_age_cats] L_cov;
-    matrix[N_age_cats, N_age_cats] cov = cov_exp_quad(age_cat_index, alpha[k], rho[k]); //covariance matrix
-   
-    // diagonal elements
-    for (n in 1:N_age_cats) {
-      cov[n, n] = cov[n, n] + delta;
-    }
-    
-    L_cov = cholesky_decompose(cov);
-    fAge[k, ] = to_row_vector( L_cov * eta );
-  }
-}
-model{
-  
-  vector[N] S;
-  
-  // priors
-  for (s in 1:2){
-    for (g in 1:2){
-      to_vector(WS[ ,s,g]) ~ normal(0, 0.5); // patch success intercept, by season and gender
-    }
-  }
-  bIn ~ normal(0,0.5);    // income
-  bDeI ~ normal(0,0.5);   // indegree
-  bDeO ~ normal(0,0.5);   // outdegree
-  bNh ~ normal(0,0.5);    // group size
-  
-  // priors for Gaussian process model - age
-  alpha ~ std_normal();  // same as ~ normal(0, 1);
-  rho ~ inv_gamma(5, 5);
-  eta ~ std_normal();
-  
-  // priors for missing values imputation - income
-  sigma_income ~ cauchy(0, 1);
-  mu_income ~ normal(0.5, 1);
-  income_merge ~ normal(mu_income, sigma_income);
-
-  // Likelihood function for within-patch harvest success model
-  for (n in 1:N) {
-    S[n] = WS[Y_pc[n], season[n], gender[n]]  // intercept, patch-specific success weight
-              + fAge[Y_pc[n],age_cat[n]]
-              + bIn[Y_pc[n]]*income_merge[n]
-              + bDeI[Y_pc[n]]*indegree[n]
-              + bDeO[Y_pc[n]]*outdegree[n]
-              + bNh[Y_pc[n]]*Nhunt[n];
-    target += bernoulli_logit_lpmf( Y_hs[n] | S[n]); // same as bernoulli_lpmf( Y_hs[n] | inv_logit(S[n])) or Y_hs[n] ~ bernoulli_logit(S[n]);
-  }
-}
-generated quantities {
-  // calculate log likelihood for model comparisons
-  // and store expected values for each observation
-  vector[N] S; 
-  vector[N] log_lik_hs;
-   
-  for (n in 1:N) {
-    S[n] = WS[Y_pc[n],season[n],gender[n]]  // intercept, patch-specific success weight
-            + fAge[Y_pc[n],age_cat[n]]
-            + bIn[Y_pc[n]]*income_merge[n]
-            + bDeI[Y_pc[n]]*indegree[n]
-            + bDeO[Y_pc[n]]*outdegree[n]
-            + bNh[Y_pc[n]]*Nhunt[n];
-            
-    log_lik_hs[n] = bernoulli_lpmf( Y_hs[n] | inv_logit(S[n]) );
-  }
-}
-'
-
 # run Stan model
-mm_hs <- stan(model_code=dear_stan, data=datlist, chains=ch, iter=it, warmup=200)
-#mm_hs <- stan(file=paste0(here(),"/m_hs.stan"), data=datlist, chains=ch, iter=it, warmup=200)
+mm_hs <- stan(file=paste0(here(),"/m_hs.stan"), data=datlist, chains=ch, iter=it, warmup=200)
 
 ## explore sampling behavior and assess mixing across Markov chains
 traceplot(mm_hs, pars="bIn")
@@ -615,8 +342,10 @@ traceplot(mm_hs, pars="bDeI")
 post_hs <- extract.samples(mm_hs)
 hs_true <- hs_est <- hs_lb <- hs_ub <- rep(NA, length.out = N)
 
+
 for (n in 1:N) {
-  # use true patch attraction intercepts to calculate true prob of patch choice
+
+  # use true patch attraction intercepts to calculate true prob of harvest success
   hs_true[n] <- logistic ( WS[dd$patch_id[n], dd$season_id[n], dd$gender_id[n]] +
                                   fAge[dd$patch_id[n], dd$age_cat[n]] +
                                   bIn[dd$patch_id[n]]*dd$income_s[n] + 
@@ -624,13 +353,13 @@ for (n in 1:N) {
                                   bDeO[dd$patch_id[n]]*dd$outdegree_s[n] +
                                   bNh[dd$patch_id[n]]*dd$Nhunt_s[n] )
   
-  # use posterior attraction weights to calculate estimate of posterior prob of patch choice
+  # use posterior attraction weights to calculate estimate of posterior prob of harvest success
   S <- post_hs$WS[ , dd$patch_id[n], dd$season_id[n], dd$gender_id[n]] +
         post_hs$fAge[ , dd$patch_id[n], dd$age_cat[n]] + 
-        post_hs$bIn[dd$patch_id[n]]*dd$income_s[n] + 
-        post_hs$bDeI[dd$patch_id[n]]*dd$indegree_s[n] +
-        post_hs$bDeO[dd$patch_id[n]]*dd$outdegree_s[n] + 
-        post_hs$bNh[dd$patch_id[n]]*dd$Nhunt_s[n]
+        post_hs$bIn[, dd$patch_id[n]]*dd$income_s[n] + 
+        post_hs$bDeI[, dd$patch_id[n]]*dd$indegree_s[n] +
+        post_hs$bDeO[, dd$patch_id[n]]*dd$outdegree_s[n] + 
+        post_hs$bNh[, dd$patch_id[n]]*dd$Nhunt_s[n]
   pr_hs_n <- logistic(S)
   hs_est[n] <- mean(pr_hs_n)
   hs_lb[n] <- rethinking::HPDI(pr_hs_n)[1]
@@ -638,10 +367,11 @@ for (n in 1:N) {
   if (n %% 100 == 0) print(n)
 }
 
-plot(hs_true, hs_est, xlim = c(0, 1), ylim = c(0, 1))
+plot(hs_true, hs_est, xlim = c(0, 1), ylim = c(0, 1),
+  xlab = "true probability of success", ylab = "estimated probability of success",
+  main = "harvest success model, simulated parameter recovery")
 abline(0, 1, lty = 2)
 for (i in 1:N) lines(c(hs_true[i], hs_true[i]), c(hs_lb[i], hs_ub[i]), col = col.alpha("dodgerblue", 0.2))
-
 
 
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -671,39 +401,37 @@ sort(ppl$income_s)
 # note, one can use observed range or one could extrapolate here
 x <- seq(-2.5, 2.5, by = 0.05) 
 
-
 # create a fictive hunter profile
 fix_agecat <- 2
 fix_indegree <- ppl$indegree_s[ppl$indegree==2][1] # use indegree_s that refers to indegree of 2
 fix_outdegree <- ppl$outdegree_s[ppl$outdegree==2][1] # use outdegree_s that refers to outdegree of 2
-fix_Nhunt <- sort(unique(dd$Nhunt))[1] # Nhunt ranged from 1:10, so this gives us Nhunt_s that refers to a group size of 1
+fix_Nhunt <- sort(unique(dd$Nhunt_s))[1] # Nhunt ranged from 1:10, so this gives us Nhunt_s that refers to a group size of 1
 
 
-# posterior probabilities of each choice and success (estimated mean, lower and upper boud)
+# posterior probabilities of each choice and success (estimated mean, lower and upper bound)
 pr_pc_est <- pr_pc_lb <- pr_pc_ub <- array(NA, dim=c(length(x), 7, 2, 2))
 pr_hs_est <- pr_hs_lb <- pr_hs_ub <- array(NA, dim=c(length(x), 7, 2, 2))
 
 for (g in 1:2) {
   for (s in 1:2) { 
     for (i in 1:length(x)) {
-        A <- post_pc$W[ ,  , s, g] + 
-              post_pc$fAge[,,fix_agecat] + # or post_pc$bAg*fix_age_s_40 + post_pc$bAg2*fix_age2_s_40 + 
-              post_pc$bIn * x[i] + 
-              post_pc$bDeI * fix_indegree +
-              post_pc$bDeO * fix_outdegree +
-              post_pc$bNh * fix_Nhunt
+      A <- post_pc$WA[ ,  , s, g] + 
+            post_pc$fAge[,,fix_agecat] + # alternatively can use a linear age model here
+            post_pc$bIn * x[i] + 
+            post_pc$bDeI * fix_indegree +
+            post_pc$bDeO * fix_outdegree +
+            post_pc$bNh * fix_Nhunt
       pr_pc_n <- t(apply(A, 1, softmax)) # transform to make prob of all patches sum to 1
       pr_pc_est[i, ,s,g] <- apply(pr_pc_n, 2, mean)
       pr_pc_lb[i, ,s,g] <- apply(pr_pc_n, 2, HPDI)[1,]
       pr_pc_ub[i, ,s,g] <- apply(pr_pc_n, 2, HPDI)[2,]
       
-      s_post <- 
-        S <- post_hs$WS[ ,  , s, g] + 
-              post_hs$fAge[,,fix_agecat] + # or post_hs$bAg*fix_age_s_40 + post_hs$bAg2*fix_age2_s_40 + 
-              post_hs$bIn * x[i] + 
-              post_hs$bDeI * fix_indegree +
-              post_hs$bDeO * fix_outdegree +
-              post_hs$bNh * fix_Nhunt
+      S <- post_hs$WS[ ,  , s, g] + 
+            post_hs$fAge[,,fix_agecat] + # alternatively can use a linear age model here
+            post_hs$bIn * x[i] + 
+            post_hs$bDeI * fix_indegree +
+            post_hs$bDeO * fix_outdegree +
+            post_hs$bNh * fix_Nhunt
       pr_hs_n <- logistic(S) # transform into probabilities
       pr_hs_est[i, ,s,g] <- apply(pr_hs_n, 2, mean)
       pr_hs_lb[i, ,s,g] <- apply(pr_hs_n, 2, HPDI)[1,]
@@ -713,8 +441,8 @@ for (g in 1:2) {
 } 
 
 
-# plot (and save the 4-pages output as PDF on desktop)
-# pdf(file=paste0(file.path(path.expand('~'),'Desktop'), "/test.pdf"), width=5, height=8)
+# plot (and save the 4-pages output as PDF)
+pdf(file=paste0(file.path(here(), "/figure2.pdf")), width=5, height=8)
 for (g in 1:2) {
   for (s in 1:2) {
     
@@ -740,7 +468,7 @@ for (g in 1:2) {
     }
   }
 }
-# dev.off() # produce pdf
+dev.off() # produce pdf
 
 
 
@@ -756,9 +484,9 @@ fix_agecat <- 2
 fix_income <- median(ppl$income_s, na.rm = TRUE) # use median of income (standardised)
 fix_indegree <- ppl$indegree_s[ppl$indegree==2][1] # use indegree_s that refers to indegree of 2
 fix_outdegree <- ppl$outdegree_s[ppl$outdegree==2][1] # use outdegree_s that refers to outdegree of 2
-fix_Nhunt <- sort(unique(dd$Nhunt))[1] # Nhunt ranged from 1:10, so this gives us Nhunt_s that refers to a group size of 1
+fix_Nhunt <- sort(unique(dd$Nhunt_s))[1] # Nhunt ranged from 1:10, so this gives us Nhunt_s that refers to a group size of 1
   
-# posterior probabilities of each choice and success (estimated mean, lower and upper boud)
+# posterior probabilities of each choice and success (estimated mean, lower and upper bound)
 pc_est <- pc_lb <- pc_ub <- array(NA, dim=c(K, 2, 2))
 hs_est <- hs_lb <- hs_ub <- array(NA, dim=c(K, 2, 2))
 
@@ -817,7 +545,7 @@ par(mfrow=c(1,1), mar=c(5.1, 4.1, 4.1, 4.1))
 
 #__________________________________________________
 #                                              xxxx
-#* supplementatry Figure: effect sizes         ####
+#* supplementary Figure: effect sizes         ####
 #                                              xxxx
 #__________________________________________________
 
@@ -835,7 +563,7 @@ plot(mm_hs, pars="bIn",
 
 #__________________________________________________
 #                                              xxxx
-#* supplementatry Table: effect sizes          ####
+#* supplementary Table: effect sizes          ####
 #                                              xxxx
 #__________________________________________________
 
