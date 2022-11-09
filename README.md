@@ -7,6 +7,4 @@ Socio-economic predictors of Inuit foraging strategies and their implications fo
 
 F. Hillemann, B. A. Beheim, E. Ready
 
-DOI: tbc
-
-License: tbc
+preprint DOI: 10.31235/osf.io/sm683
