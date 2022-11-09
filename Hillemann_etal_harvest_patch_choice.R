@@ -11,8 +11,6 @@
 #______________________________________________________________________________________________________
 
 
-options(warnPartialMatchDollar=TRUE) 
-# squawks if you refer to a variable in a data frame that only partially matches 
 
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -25,9 +23,15 @@ options(warnPartialMatchDollar=TRUE)
 rm(list=ls())
 
 ## packages and functions ####
-library(here)
-library(rstan)
-library(rethinking)
+if (!require(here)) install.packages(here); library(here)
+library(rstan) # for help: https://mc-stan.org/users/interfaces/rstan.html
+library(rethinking) # alternatively: devtools::install_github("rmcelreath/rethinking@slim")
+if (!require(xtable)) install.packages(xtable); library(xtable)
+
+
+options(warnPartialMatchDollar=TRUE) 
+# squawks if you refer to a variable in a data frame that only partially matches 
+
 
 # simplex transforms counts into proportions of the total
 # a simplex is a vector that sums to 1 and can be interpreted as probabilities
@@ -38,7 +42,7 @@ simplex <- function(x) x/sum(x)
 # with probabilities proportional to the exponentials of the input
 softmax <- function(x) simplex(exp(x)) # same as exp(x) / sum(exp(x))
 
-## custom function to replace NA
+# custom function to replace NA
 na2dummy <- function(data){ 
   data[is.na(data)] <- (999)
   return(data)
@@ -53,8 +57,6 @@ na2dummy <- function(data){
 #                                              xxxx
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-
-set.seed(1)
 
 N = 300              # N hunting trips
 K = 7                # K patch types
@@ -157,16 +159,16 @@ WS[ ,2,2] <- logit(c(0.6 , 0.7 , 0.6 , 0.1, 0, 0, 0.3))    # season2, gender2
 ## set other effects
 # for each patch category, we set a different effects
 # bIn: income, bDeI/bDeO: in-/outdegree, N hunters: group size
-# bIn  <- round(rnorm(K, 0.2, 0.5), 1)
-# bDeI <- round(rnorm(K, 0, 0.3), 1)
-# bDeO <- round(rnorm(K, 0, 0.3), 1)
-# bNh  <- round(rnorm(K, 0.2, 0.3), 1)
-# bIn[K] <- bDeI[K]  <- bDeO[K] <- bNh[K] <- 0 # reference cat
 # here, we use observed effect sizes
 bIn  <- c(0.07, -0.04, 0.45, 0.23, -0.02, -0.49, 0.01)
 bDeI <- c(-0.3, -0.1, 0.2, 0.1, -0.7, -0.6, 0)
 bDeO <- c(-0.1, -0.1, -0.2, 0.2, 0.2, 0.4, 0)
 bNh  <- c(0.6, 0.4, -0.1, 0.1, -0.1, -0.6, 0)
+# alternatively, use:
+# bIn  <- round(rnorm(K, 0.2, 0.5), 1)
+# bDeI <- round(rnorm(K, 0, 0.3), 1)
+# bDeO <- round(rnorm(K, 0, 0.3), 1)
+# bNh  <- round(rnorm(K, 0.2, 0.3), 1)
 
 
 
@@ -190,7 +192,7 @@ Y_pc <- rep(NA, N)
 
 for (n in 1:N) {
   A <- WA[ , dd$season_id[n], dd$gender_id[n]] +
-        fAge[ ,dd$age_cat[n]] +
+        fAge[ ,dd$age_cat[n]] +  # alternatively can use a linear age model here
         bIn*dd$income_s[n] +
         bDeI*dd$indegree_s[n] +
         bDeO*dd$outdegree_s[n] +
@@ -207,7 +209,7 @@ Y_hs <- rep(NA, N)
 
 for (n in 1:N) {
   S <- WS[ , dd$season_id[n], dd$gender_id[n]] +
-        fAge[ , dd$age_cat[n]] +
+        fAge[ , dd$age_cat[n]] +  # alternatively can use a linear age model here
         bIn*dd$income_s[n] +
         bDeI*dd$indegree_s[n] +
         bDeO*dd$outdegree_s[n] + 
@@ -221,7 +223,9 @@ dd$harvest <- Y_hs
 
 #__________________________________________________
 ## missing value imputation in Stan
+
 dd$income_s_complete <- dd$income_s
+
 # realistically, we may not have income data for everyone
 j_id_incomplete <- sample(J, size=sample(2,1))
 ppl$income_s[ppl$j_id %in% j_id_incomplete] <- NA
@@ -251,7 +255,7 @@ ch=3
 it=2000
 
 
-# data list for Stan
+## data list for Stan
 datlist = list(N = N,                    # number of harvest episodes,
                K = K,                    # number of patches 
                Y_pc = dd$patch_id,       # patch choice ID
@@ -275,6 +279,9 @@ datlist = list(N = N,                    # number of harvest episodes,
 #                                              xxxx
 #__________________________________________________
 
+# show Stan model code in console
+writeLines(readLines(paste0(here(),"/m_pc.stan")))
+
 # run Stan model
 mm_pc <- stan(file=paste0(here(),"/m_pc.stan"), data=datlist, chains=ch, iter=it, warmup=200)
 
@@ -285,29 +292,27 @@ traceplot(mm_pc, pars="fAge")
 traceplot(mm_pc, pars=c("bDeI", "bDeO"))
 traceplot(mm_pc, pars="bNh")
 
-stopifnot(1 == 2)
 
-
-## compare estimated and actual probabilities of each choice
+## compare estimated and true (simulated) probabilities of each choice
 post_pc <- extract.samples(mm_pc)
 pc_true <- pc_est <- pc_lb <- pc_ub <- matrix(NA, nrow = N, ncol = K)
 
 for (n in 1:N) {  
   # calculate true prob of patch choice
   pc_true[n,] <- softmax( WA[,dd$season_id[n],dd$gender_id[n]] + # intercept
-                                  fAge[ ,dd$age_cat[n]] +
-                                  bIn*dd$income_s_complete[n] +
+                                  fAge[ ,dd$age_cat[n]] + 
+                                  bIn *dd$income_s_complete[n] +
                                   bDeI*dd$indegree_s[n] +
                                   bDeO*dd$outdegree_s[n] +
-                                  bNh*dd$Nhunt_s[n] )
+                                  bNh *dd$Nhunt_s[n] )
   
   # calculate estimate of posterior prob of patch choice
   A <- post_pc$WA[ , , dd$season_id[n], dd$gender_id[n]] + # intercept
         post_pc$fAge[ , , dd$age_cat[n]] +
-        post_pc$bIn * post_pc$income_merge[,n] +
+        post_pc$bIn *post_pc$income_merge[,n] +
         post_pc$bDeI*dd$indegree_s[n] +
         post_pc$bDeO*dd$outdegree_s[n] +
-        post_pc$bNh*dd$Nhunt_s[n]
+        post_pc$bNh *dd$Nhunt_s[n]
   pc_n <- t(apply(A, 1, softmax))
   pc_est[n, ] <- apply(pc_n, 2, mean)
   pc_lb[n, ] <- apply(pc_n, 2, rethinking::HPDI)[1,]
@@ -318,12 +323,12 @@ for (n in 1:N) {
 plot(pc_true, pc_est, xlim = c(0, 0.8), ylim = c(0, 0.8),
   xlab = "true probability of choice", ylab = "estimated probability of choice",
   main = "patch choice model, simulated parameter recovery")
-abline(0, 1)
 for (n in 1:N) {
   for (k in 1:K) {
-    lines(c(pc_true[n,k], pc_true[n,k]), c(pc_lb[n,k], pc_ub[n,k]), col = gray(0.5, 0.5))
+    lines(c(pc_true[n,k], pc_true[n,k]), c(pc_lb[n,k], pc_ub[n,k]), col = col.alpha("dodgerblue", 0.2))
   }
 }
+abline(0, 1, lty = 2)
 
 
 #__________________________________________________
@@ -331,6 +336,9 @@ for (n in 1:N) {
 #* harvest success                             ####
 #                                              xxxx
 #__________________________________________________
+
+# show Stan model code in console
+writeLines(readLines(paste0(here(),"/m_hs.stan")))
 
 # run Stan model
 mm_hs <- stan(file=paste0(here(),"/m_hs.stan"), data=datlist, chains=ch, iter=it, warmup=200)
@@ -341,29 +349,27 @@ traceplot(mm_hs, pars="fAge")
 traceplot(mm_hs, pars="bDeI")
 
 
-# compare estimated and actual probabilities of each choice
+# compare estimated and true (simulated) probabilities of harvest success
 post_hs <- extract.samples(mm_hs)
 hs_true <- hs_est <- hs_lb <- hs_ub <- rep(NA, length.out = N)
-
-# [-] modify the plots to include the imputed income values, NOT the 999
 
 for (n in 1:N) {
 
   # use true patch attraction intercepts to calculate true prob of harvest success
   hs_true[n] <- logistic ( WS[dd$patch_id[n], dd$season_id[n], dd$gender_id[n]] +
                                   fAge[dd$patch_id[n], dd$age_cat[n]] +
-                                  bIn[dd$patch_id[n]]*dd$income_s_complete[n] + 
+                                  bIn[dd$patch_id[n]] *dd$income_s_complete[n] + 
                                   bDeI[dd$patch_id[n]]*dd$indegree_s[n] + 
                                   bDeO[dd$patch_id[n]]*dd$outdegree_s[n] +
-                                  bNh[dd$patch_id[n]]*dd$Nhunt_s[n] )
+                                  bNh[dd$patch_id[n]] *dd$Nhunt_s[n] )
   
   # use posterior attraction weights to calculate estimate of posterior prob of harvest success
   S <- post_hs$WS[ , dd$patch_id[n], dd$season_id[n], dd$gender_id[n]] +
-        post_hs$fAge[ , dd$patch_id[n], dd$age_cat[n]] + 
-        post_hs$bIn[, dd$patch_id[n]]* post_hs$income_merge[,n] + 
-        post_hs$bDeI[, dd$patch_id[n]]*dd$indegree_s[n] +
-        post_hs$bDeO[, dd$patch_id[n]]*dd$outdegree_s[n] + 
-        post_hs$bNh[, dd$patch_id[n]]*dd$Nhunt_s[n]
+        post_hs$fAge[ ,dd$patch_id[n], dd$age_cat[n]] + 
+        post_hs$bIn[ ,dd$patch_id[n]] *post_hs$income_merge[,n] + 
+        post_hs$bDeI[ ,dd$patch_id[n]]*dd$indegree_s[n] +
+        post_hs$bDeO[ ,dd$patch_id[n]]*dd$outdegree_s[n] + 
+        post_hs$bNh[ ,dd$patch_id[n]] *dd$Nhunt_s[n]
   pr_hs_n <- logistic(S)
   hs_est[n] <- mean(pr_hs_n)
   hs_lb[n] <- rethinking::HPDI(pr_hs_n)[1]
@@ -374,9 +380,8 @@ for (n in 1:N) {
 plot(hs_true, hs_est, xlim = c(0, 1), ylim = c(0, 1),
   xlab = "true probability of success", ylab = "estimated probability of success",
   main = "harvest success model, simulated parameter recovery")
+for (n in 1:N) lines(c(hs_true[n], hs_true[n]), c(hs_lb[n], hs_ub[n]), col = col.alpha("blue", 0.2))
 abline(0, 1, lty = 2)
-for (i in 1:N) lines(c(hs_true[i], hs_true[i]), c(hs_lb[i], hs_ub[i]), col = col.alpha("dodgerblue", 0.2))
-
 
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx####
@@ -397,12 +402,12 @@ cols <- rainbow(K)
 #__________________________________________________
 
 # example: income
-
 xlab = "income"
-# set steps of x-axis
-sort(ppl$income_s)
-# values might range between -2.5 and +2.5
-# note, one can use observed range or one could extrapolate here
+
+## set steps of x-axis
+# either used use observed range of income or extrapolate here
+min(dd$income_s_complete)
+max(dd$income_s_complete)
 x <- seq(-2.5, 2.5, by = 0.05) 
 
 # create a fictive hunter profile
@@ -420,7 +425,7 @@ for (g in 1:2) {
   for (s in 1:2) { 
     for (i in 1:length(x)) {
       A <- post_pc$WA[ ,  , s, g] + 
-            post_pc$fAge[,,fix_agecat] + # alternatively can use a linear age model here
+            post_pc$fAge[,,fix_agecat] +
             post_pc$bIn * x[i] + 
             post_pc$bDeI * fix_indegree +
             post_pc$bDeO * fix_outdegree +
@@ -431,7 +436,7 @@ for (g in 1:2) {
       pr_pc_ub[i, ,s,g] <- apply(pr_pc_n, 2, HPDI)[2,]
       
       S <- post_hs$WS[ ,  , s, g] + 
-            post_hs$fAge[,,fix_agecat] + # alternatively can use a linear age model here
+            post_hs$fAge[,,fix_agecat] +
             post_hs$bIn * x[i] + 
             post_hs$bDeI * fix_indegree +
             post_hs$bDeO * fix_outdegree +
@@ -525,6 +530,8 @@ for (g in 1:2 ) {
   }
 }
 
+# plot (and save the 4-panel output as PDF)
+pdf(file=paste0(file.path(here(), "/figure3.pdf")), width=5, height=5)
 par(mfrow=c(2,2), mar=c(4.1, 4.1, 2.1, 2.1))
 for (g in 1:2 ) {
   for (s in 1:2) {
@@ -543,6 +550,7 @@ for (g in 1:2 ) {
      }
   }#s
 }#g
+dev.off() # produce pdf
 par(mfrow=c(1,1), mar=c(5.1, 4.1, 4.1, 4.1))
 
 
@@ -564,20 +572,53 @@ plot(mm_hs, pars="bIn",
 
 
 
-
 #__________________________________________________
 #                                              xxxx
 #* supplementary Table: effect sizes          ####
 #                                              xxxx
 #__________________________________________________
 
-rethinking::precis( as.data.frame(mm_pc), depth=2 )
-# or
-print(mm_pc, probs = c(0.025, 0.5, 0.975))
-print(mm_pc, probs = c(0.025, 0.5, 0.975), pars="WA")
-print(mm_pc, probs = c(0.025, 0.5, 0.975), pars="bIn")
-print(mm_pc, probs = c(0.025, 0.5, 0.975), pars="fAge")
-print(mm_pc, probs = c(0.025, 0.5, 0.975), pars="bDeI")
-print(mm_pc, probs = c(0.025, 0.5, 0.975), pars="bDeO")
-print(mm_pc, probs = c(0.025, 0.5, 0.975), pars="bNh")
+tt <- as.data.frame(rethinking::precis(mm_pc, prob=0.89, digits=2, depth=3,
+                                       pars=c("WA", "bIn", "fAge", "bDeI", "bDeO", "bNh")))
+
+# alternatively, use
+print(mm_pc)
+
+tt <- as.data.frame(summary(mm_pc, 
+                            pars = c("WA", "bIn", "fAge", "bDeI", "bDeO", "bNh"),
+                            probs = c(0.055, 0.945))$summary)
+
+
+# reformat table
+pars <- row.names(tt)
+tt <- as.data.frame(lapply(tt, round, digits = 3))
+tt$pars <- pars
+
+tt$confound <- sapply(strsplit(tt$pars, "[", fixed=TRUE), getElement, 1)
+tt$confound[tt$confound %in% "WA"]  <- "intercept"   # WA[k,s,g]
+tt$confound[tt$confound %in% "bIn"] <- "income"      # bIn[k]
+tt$confound[tt$confound %in% "fAge"]<- "age"         # fAge[k,agecat]
+tt$confound[tt$confound %in% "bDeI"]<- "in-degree"
+tt$confound[tt$confound %in% "bDeO"]<- "out-degree"
+tt$confound[tt$confound %in% "bNh"] <- "N hunters"
+
+tt$patch <- sapply(strsplit(tt$pars, "[", fixed=TRUE), getElement, 2)
+tt$patch <- lapply(tt$patch, substr, 1,1)
+tt$patch_cat[tt$patch %in% "1"]<- "incidental"
+tt$patch_cat[tt$patch %in% "2"]<- "inland spring"
+tt$patch_cat[tt$patch %in% "3"]<- "inland summer"
+tt$patch_cat[tt$patch %in% "4"]<- "inland winter"
+tt$patch_cat[tt$patch %in% "5"]<- "marine summer"
+tt$patch_cat[tt$patch %in% "6"]<- "marine winter"
+tt$patch_cat[tt$patch %in% "7"]<- "tidal"
+
+tt <- tt[ , c("pars", "confound", "patch_cat", "mean", "sd", "X5.5.", "X94.5.")]
+colnames(tt) <- c("pars", "Counfound", "Patch Category", "Mean", "SD", "5.5%", "94.5%")
+tt$Counfound[tt$Counfound=="intercept"] <- paste("intercept", rep(c("wi, m", "wi, f", "su, m", "su, f"), 7))
+tt$Counfound[tt$Counfound=="age"] <- rep(c("age <30", "age 30-40", "age 40-50", "age 50+"), 7)
+tt$pars <- NULL
+
+
+# export table for LaTeX
+print(xtable(tt, type = "latex"), include.rownames=FALSE, file = file.path(here(), "/TableS1_effectsizes.tex"))
 
