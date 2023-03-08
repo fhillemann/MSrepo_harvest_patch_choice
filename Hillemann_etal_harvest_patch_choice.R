@@ -11,6 +11,21 @@
 #______________________________________________________________________________________________________
 
 
+#xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+#xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+#                                              xxxx
+# reproducability notes                        ####
+#                                              xxxx
+#xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+#xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# all analyses reported in MS were conducted using R version 4.2.1 and Stan 2.21.0
+R.Version()$version.string
+stan_version()
+
+set.seed(135)
+
+
 
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -250,10 +265,9 @@ dd <- na2dummy(dd)
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
-## set number of chains and iterations
-ch=3
-it=2000
-
+## set number of chains and iterations (values used in the analysis presented in the MS: ch=4, it=6000)
+ch=4
+it=6000
 
 ## data list for Stan
 datlist = list(N = N,                    # number of harvest episodes,
@@ -392,8 +406,9 @@ abline(0, 1, lty = 2)
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 cols <- rainbow(K)
-# colours used in MS are linked to season and marine/terrestrial (darker/paler tone)
-# cols <- c("lavenderblush3", "darkseagreen3","gold2","powderblue","goldenrod3","steelblue","lightslategrey")
+
+# colours used in MS are linked to season, marine/terrestrial (darker/paler tone)
+cols <- c("lavender blush 3" , "yellow green", "gold2", "powderblue", "goldenrod3", "steelblue", "lightslategrey")
 
 #__________________________________________________
 #                                              xxxx
