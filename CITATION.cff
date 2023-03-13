@@ -1,0 +1,30 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: Hillemann_et_al_2023_harvest_patch_choice
+message: 'If you use this code, please cite it as below.'
+type: software
+authors:
+  - given-names: Friederike
+    family-names: Hillemann
+    email: f.hillemann@web.de
+    orcid: 'https://orcid.org/0000-0002-8992-0676'
+  - orcid: 'https://orcid.org/0000-0003-4653-3155'
+    given-names: Bret A.
+    family-names: Beheim
+  - orcid: 'https://orcid.org/0000-0002-8473-5826'
+    given-names: Elspeth
+    family-names: Ready
+identifiers:
+  - type: doi
+    value: 10.31235/osf.io/sm683
+    description: Manuscript preprint
+repository-code: >-
+  https://github.com/fhillemann/MSrepo_harvest_patch_choice.git
+abstract: >-
+  R and Stan code to simulate and analyse foraging trip data
+  (patch choice and harvest success). Code repository
+  accompanying the manuscript: Socio-economic predictors of
+  Inuit hunting choices and their implications for climate
+  change adaptation. 
