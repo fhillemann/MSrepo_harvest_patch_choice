@@ -1,11 +1,11 @@
 #______________________________________________________________________________________________________
 #______________________________________________________________________________________________________
 #
-# Socio-economic variation in Inuit harvest choices and its implications for climate change adaptation
+# Socio-economic predictors of Inuit hunting choices and their implications for climate change adaptation
 # F. Hillemann, B. A. Beheim, E. Ready
 # 
 # R and Stan code to simulate and analyse foraging trip data (patch choice and harvest success)
-# contact: friederike_hillemann@eva.mpg.de // f.hillemann@web.de
+# contact: f.hillemann@web.de
 #
 #______________________________________________________________________________________________________
 #______________________________________________________________________________________________________
@@ -14,7 +14,7 @@
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 #                                              xxxx
-# reproducability notes                        ####
+# reproducibility notes                        ####
 #                                              xxxx
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -38,10 +38,10 @@ set.seed(135)
 rm(list=ls())
 
 ## packages and functions ####
-if (!require(here)) install.packages(here); library(here)
-library(rstan) # for help: https://mc-stan.org/users/interfaces/rstan.html
-library(rethinking) # alternatively: devtools::install_github("rmcelreath/rethinking@slim")
-if (!require(xtable)) install.packages(xtable); library(xtable)
+library(rstan) # instructions for downloading and installing RStan: https://mc-stan.org/users/interfaces/rstan.html
+library(rethinking) # alternatively, install via devtools::install_github("rmcelreath/rethinking@slim")
+if (!require(here)) install.packages(here); library(here) # to locate loading (stan) files; or use .Rproj
+if (!require(xtable)) install.packages(xtable); library(xtable) # to export LaTeX-ready tables
 
 
 options(warnPartialMatchDollar=TRUE) 
@@ -157,18 +157,18 @@ dd$gender_id = ifelse( dd$gender=="m", 1 , 2 ) # 1-male, 2-female
 # the centered probability distribution for patch choice for season i and gender j is
 # softmax(WA[,i,j])
 WA <- array(NA, dim = c(K, 2, 2))
-WA[ ,1,1] <- c(-200, -200, -200,  1,  1, 1.2, 0)    # season1, gender1
-WA[ ,1,2] <- c(-200, -200, -200,  1,  1, 0.2, 0)    # season1, gender2
-WA[ ,2,1] <- c( 1,  1,  1, 1.2, -200, -200, 0)    # season2, gender1
-WA[ ,2,2] <- c( 1,  1,  1, 0.2, -200, -200, 0)    # season2, gender2
+WA[ ,1,1] <- c(-200, -200, -200, 1,      1,    1.2, 0)    # season1, gender1
+WA[ ,1,2] <- c(-200, -200, -200, 1,      1,    0.2, 0)    # season1, gender2
+WA[ ,2,1] <- c(   1,    1,    1, 1.2, -200, -200,   0)    # season2, gender1
+WA[ ,2,2] <- c(   1,    1,    1, 0.2, -200, -200,   0)    # season2, gender2
 
 
 ## set patch success probability intercepts (as log-odds)
 WS <- array(NA, dim = c(K, 2, 2))
-WS[ ,1,1] <- logit(c(0, 0, 0, 0.1 , 0.6 , 0.8, 0.2))    # season1, gender1
-WS[ ,1,2] <- logit(c(0, 0, 0, 0.6 , 0.7 , 0.8, 0.25))    # season1, gender2
-WS[ ,2,1] <- logit(c(0.3 , 0.6 , 0.5 , 0.2, 0, 0, 0.8))    # season2, gender1
-WS[ ,2,2] <- logit(c(0.6 , 0.7 , 0.6 , 0.1, 0, 0, 0.3))    # season2, gender2
+WS[ ,1,1] <- logit(c(0,    0,    0,    0.1 , 0.6 , 0.8 , 0.2))    # season1, gender1
+WS[ ,1,2] <- logit(c(0,    0,    0,    0.6 , 0.7 , 0.8 , 0.25))   # season1, gender2
+WS[ ,2,1] <- logit(c(0.3 , 0.6 , 0.5 , 0.2 , 0 ,   0   , 0.8))    # season2, gender1
+WS[ ,2,2] <- logit(c(0.6 , 0.7 , 0.6 , 0.1 , 0 ,   0   , 0.3))    # season2, gender2
 
 
 ## set other effects
@@ -239,9 +239,11 @@ dd$harvest <- Y_hs
 #__________________________________________________
 ## missing value imputation in Stan
 
+# realistically, we may not have all information about for everyone
+# randomly choose some individuals with incomplete data (here: income)
+
 dd$income_s_complete <- dd$income_s
 
-# realistically, we may not have income data for everyone
 j_id_incomplete <- sample(J, size=sample(2,1))
 ppl$income_s[ppl$j_id %in% j_id_incomplete] <- NA
 dd$income_s[dd$j_id %in% ppl$j_id[is.na(ppl$income_s)] ] <- NA
@@ -294,10 +296,10 @@ datlist = list(N = N,                    # number of harvest episodes,
 #__________________________________________________
 
 # show Stan model code in console
-writeLines(readLines(paste0(here(),"/m_pc.stan")))
+writeLines(readLines("m_pc.stan"))
 
 # run Stan model
-mm_pc <- stan(file=paste0(here(),"/m_pc.stan"), data=datlist, chains=ch, iter=it, warmup=200)
+mm_pc <- stan(file="m_pc.stan", data=datlist, chains=ch, iter=it, warmup=200)
 
 ## explore sampling behavior and assess mixing across Markov chains
 traceplot(mm_pc, pars="WA")
@@ -307,7 +309,7 @@ traceplot(mm_pc, pars=c("bDeI", "bDeO"))
 traceplot(mm_pc, pars="bNh")
 
 
-## compare estimated and true (simulated) probabilities of each choice
+## visually compare estimated and true (simulated) probabilities of each choice
 post_pc <- extract.samples(mm_pc)
 pc_true <- pc_est <- pc_lb <- pc_ub <- matrix(NA, nrow = N, ncol = K)
 
@@ -334,6 +336,8 @@ for (n in 1:N) {
   if (n %% 100 == 0) print(n)
 }
 
+
+## inspect perfromance
 plot(pc_true, pc_est, xlim = c(0, 0.8), ylim = c(0, 0.8),
   xlab = "true probability of choice", ylab = "estimated probability of choice",
   main = "patch choice model, simulated parameter recovery")
@@ -352,10 +356,10 @@ abline(0, 1, lty = 2)
 #__________________________________________________
 
 # show Stan model code in console
-writeLines(readLines(paste0(here(),"/m_hs.stan")))
+writeLines(readLines("m_hs.stan"))
 
 # run Stan model
-mm_hs <- stan(file=paste0(here(),"/m_hs.stan"), data=datlist, chains=ch, iter=it, warmup=200)
+mm_hs <- stan(file="m_hs.stan", data=datlist, chains=ch, iter=it, warmup=200)
 
 ## explore sampling behavior and assess mixing across Markov chains
 traceplot(mm_hs, pars="bIn")
@@ -363,7 +367,7 @@ traceplot(mm_hs, pars="fAge")
 traceplot(mm_hs, pars="bDeI")
 
 
-# compare estimated and true (simulated) probabilities of harvest success
+# visually compare estimated and true (simulated) probabilities of harvest success
 post_hs <- extract.samples(mm_hs)
 hs_true <- hs_est <- hs_lb <- hs_ub <- rep(NA, length.out = N)
 
@@ -391,11 +395,17 @@ for (n in 1:N) {
   if (n %% 100 == 0) print(n)
 }
 
+
+## inspect perfromance
 plot(hs_true, hs_est, xlim = c(0, 1), ylim = c(0, 1),
   xlab = "true probability of success", ylab = "estimated probability of success",
   main = "harvest success model, simulated parameter recovery")
 for (n in 1:N) lines(c(hs_true[n], hs_true[n]), c(hs_lb[n], hs_ub[n]), col = col.alpha("blue", 0.2))
 abline(0, 1, lty = 2)
+
+
+
+
 
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx####
@@ -420,7 +430,7 @@ cols <- c("lavender blush 3" , "yellow green", "gold2", "powderblue", "goldenrod
 xlab = "income"
 
 ## set steps of x-axis
-# either used use observed range of income or extrapolate here
+# either used use observed range of income or extrapolate
 min(dd$income_s_complete)
 max(dd$income_s_complete)
 x <- seq(-2.5, 2.5, by = 0.05) 
@@ -441,7 +451,7 @@ for (g in 1:2) {
     for (i in 1:length(x)) {
       A <- post_pc$WA[ ,  , s, g] + 
             post_pc$fAge[,,fix_agecat] +
-            post_pc$bIn * x[i] + 
+            post_pc$bIn * x[i] + # loop through the range of income values set above
             post_pc$bDeI * fix_indegree +
             post_pc$bDeO * fix_outdegree +
             post_pc$bNh * fix_Nhunt
@@ -465,8 +475,8 @@ for (g in 1:2) {
 } 
 
 
-# plot (and save the 4-pages output as PDF)
-pdf(file=paste0(file.path(here(), "/figure2.pdf")), width=5, height=8)
+# plot (and save the 4-pages output as a single PDF)
+pdf(file="figure2.pdf", width=5, height=8)
 for (g in 1:2) {
   for (s in 1:2) {
     
@@ -484,7 +494,7 @@ for (g in 1:2) {
       polygon(c(x, rev(x)), c(pr_pc_lb[ ,k,s,g], rev(pr_pc_ub[ ,k,s,g])), col=col.alpha(cols[k], 0.2), border=NA)
       
       plot(1, 1, type = "n", xlim=c(min(x), max(x)), ylim=c(0,1), las=1,
-           xlab = xlab, ylab = "pr(success)", cex.axis=0.9, 
+           xlab = xlab, ylab = "pr(success)", cex.axis=0.9,
            main = paste( title_s, title_g, sep=", "), cex.main=0.6, xaxt="n")
       axis(1, at = c(-1.5, 0, 1.5))
       points(x, pr_hs_est[ ,k,s,g], type = "l", col=cols[k])
@@ -518,11 +528,11 @@ for (g in 1:2 ) {
   for (s in 1:2 ) { 
     
     A <- post_pc$WA[ , ,s,g] + 
-          post_pc$fAge[ , ,fix_agecat] + 
-          post_pc$bIn*fix_income +
-          post_pc$bDeI*fix_indegree +
-          post_pc$bDeO*fix_outdegree +
-          post_pc$bNh*fix_Nhunt
+         post_pc$fAge[ , ,fix_agecat] + 
+         post_pc$bIn*fix_income +
+         post_pc$bDeI*fix_indegree +
+         post_pc$bDeO*fix_outdegree +
+         post_pc$bNh*fix_Nhunt
     
     pc_n <- t(apply(A, 1, softmax)) # transform to make prob of all patches sum to 1
     pc_est[ ,s,g] <- apply(pc_n, 2, mean)
@@ -531,11 +541,11 @@ for (g in 1:2 ) {
     
     
     S <- post_hs$WS[ , ,s,g] + 
-        post_hs$fAge[ , ,fix_agecat] +
-        post_hs$bIn*fix_income +
-        post_hs$bDeI*fix_indegree +
-        post_hs$bDeO*fix_outdegree +
-        post_hs$bNh*fix_Nhunt
+         post_hs$fAge[ , ,fix_agecat] +
+         post_hs$bIn*fix_income +
+         post_hs$bDeI*fix_indegree +
+         post_hs$bDeO*fix_outdegree +
+         post_hs$bNh*fix_Nhunt
     
     hs_n <- logistic(S) # transform into probabilities
     hs_est[ ,s,g] <- apply(hs_n, 2, mean)
@@ -546,7 +556,7 @@ for (g in 1:2 ) {
 }
 
 # plot (and save the 4-panel output as PDF)
-pdf(file=paste0(file.path(here(), "/figure3.pdf")), width=5, height=5)
+pdf(file="figure3.pdf", width=5, height=5)
 par(mfrow=c(2,2), mar=c(4.1, 4.1, 2.1, 2.1))
 for (g in 1:2 ) {
   for (s in 1:2) {
@@ -576,7 +586,8 @@ par(mfrow=c(1,1), mar=c(5.1, 4.1, 4.1, 4.1))
 #                                              xxxx
 #__________________________________________________
 
-plot(mm_hs, pars="bIn", 
+# alternatively, use rstan::stan_plot (rstan plots behave like ggplot objects)
+plot(mm_pc, pars="bIn", 
      show_density = FALSE,
      point_est = "mean",
      ci_level = 0.89,
@@ -635,5 +646,5 @@ tt$pars <- NULL
 
 
 # export table for LaTeX
-print(xtable(tt, type = "latex"), include.rownames=FALSE, file = file.path(here(), "/TableS1_effectsizes.tex"))
+print(xtable(tt, type = "latex"), include.rownames=FALSE, file = "TableS1_effectsizes.tex")
 
