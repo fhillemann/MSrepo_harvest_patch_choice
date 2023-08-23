@@ -24,11 +24,9 @@ data {
   real indegree[N];                  // indegree, standardised
   real outdegree[N];                 // outdegree, standardised
   real Nhunt[N];                     // group size, number of hunters on trip, standardised
-   
   // missing values
   int<lower=1> missn_income;          // number of missing values
   int missdex_income[missn_income];   // index of missing values in vector
-  
 }
 transformed data {
   real delta = 1e-9; // add to the diagonal of the GP age covariance matrix to ensure positive definite values
@@ -58,7 +56,7 @@ transformed parameters {
   real income_merge[N];
   income_merge = income;
   for (i in 1:missn_income) income_merge[missdex_income[i]] = income_impute[i];
-  // // alternatively use the merge_missing function (top of script):
+  // // alternatively, use the merge_missing function (top of script):
   // real income_merge = merge_missing(missdex_income, to_vector(income), income_impute);
   
   // latent variable Gaussian process - age
