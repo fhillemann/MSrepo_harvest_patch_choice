@@ -3,6 +3,8 @@
 #
 # Socio-economic predictors of Inuit hunting choices and their implications for climate change adaptation
 # F. Hillemann, B. A. Beheim, E. Ready
+#
+# Phil. Trans. Roy. Soc. B, 2023
 # 
 # R and Stan code to simulate and analyse foraging trip data (patch choice and harvest success)
 # contact: f.hillemann@web.de
@@ -23,7 +25,9 @@
 R.Version()$version.string
 stan_version()
 
-set.seed(135)
+set.seed(79)
+set.seed(183)
+set.seed(152)
 
 
 
@@ -89,6 +93,7 @@ dd <- data.frame( trip_id = c(1:N) ,
 dd$season <- ifelse( dd$season == 0, "summer", "winter" )
 
 
+
 #__________________________________________________
 ## make some people
 ppl <- NULL
@@ -123,10 +128,7 @@ ppl$outdegree_s <- (ppl$outdegree - mean(ppl$outdegree) ) / sd(ppl$outdegree)
 
 #__________________________________________________
 ## send people harvesting
-# to draw IDs, dgeom works well to reflect that few people go out a lot, most only occasionally 
-# plot( dgeom( c(1:J), prob=0.2) )
-j_once <- c(1:J) # making sure each hunter shows up at least once
-dd$j_id <- sample(c( j_once , sample( c(1:J), size=N-length(j_once), replace=TRUE, prob=dgeom(c(1:J), 0.2))))
+dd$j_id <- c(sample( c(1:J), size=N, replace=TRUE, prob=rep(1/J, J) ) ) 
 dd$age_cat <- ppl$age_cat[match(dd$j_id, ppl$j_id)]
 dd$gender <- ppl$gender[match(dd$j_id, ppl$j_id)]
 dd$income_s <- ppl$income_s[match(dd$j_id, ppl$j_id)]
@@ -140,8 +142,8 @@ dd$Nhunt_s <- (dd$Nhunt - mean(dd$Nhunt)) / sd(dd$Nhunt)
 
 #__________________________________________________
 # prepare data for Stan
-# Stan needs integer IDs as input (1:x instead of character strings)
-# e.g., if patch data were entered as "winter marine" etc, or j_id as "ID01" etc
+# instead of character strings, Stan needs integer IDs as input
+# e.g., if patch data were entered as "winter marine" etc, or hunters j_id as "ID01" etc
 # dd$patch_id <- as.integer(as.factor( dd$patch_cat )) 
 # dd$hunter_id <- as.integer(as.factor( dd$j_id ))
 dd$season_id <- ifelse( dd$season=="winter", 1 , 2 ) # 1-snow/ice, 2-ice-free
@@ -175,14 +177,14 @@ WS[ ,2,2] <- logit(c(0.6 , 0.7 , 0.6 , 0.1 , 0 ,   0   , 0.3))    # season2, gen
 # for each patch category, we set a different effects
 # bIn: income, bDeI/bDeO: in-/outdegree, N hunters: group size
 # here, we use observed effect sizes
-bIn  <- c(0.07, -0.04, 0.45, 0.23, -0.02, -0.49, 0.01)
-bDeI <- c(-0.3, -0.1, 0.2, 0.1, -0.7, -0.6, 0)
-bDeO <- c(-0.1, -0.1, -0.2, 0.2, 0.2, 0.4, 0)
-bNh  <- c(0.6, 0.4, -0.1, 0.1, -0.1, -0.6, 0)
+bIn  <- c( 0.07, -0.04,  0.45, 0.23, -0.02, -0.49, 0.01)
+bDeI <- c(-0.3 , -0.1 ,  0.2 , 0.1 , -0.7 , -0.6 , 0   )
+bDeO <- c(-0.1 , -0.1 , -0.2 , 0.2 ,  0.2 ,  0.4 , 0   )
+bNh  <- c( 0.6 ,  0.4 , -0.1 , 0.1 , -0.1 , -0.6 , 0   )
 # alternatively, use:
 # bIn  <- round(rnorm(K, 0.2, 0.5), 1)
-# bDeI <- round(rnorm(K, 0, 0.3), 1)
-# bDeO <- round(rnorm(K, 0, 0.3), 1)
+# bDeI <- round(rnorm(K, 0  , 0.3), 1)
+# bDeO <- round(rnorm(K, 0  , 0.3), 1)
 # bNh  <- round(rnorm(K, 0.2, 0.3), 1)
 
 
@@ -239,7 +241,7 @@ dd$harvest <- Y_hs
 #__________________________________________________
 ## missing value imputation in Stan
 
-# realistically, we may not have all information about for everyone
+# realistically, we may not have all information available for everyone
 # randomly choose some individuals with incomplete data (here: income)
 
 dd$income_s_complete <- dd$income_s
@@ -269,7 +271,7 @@ dd <- na2dummy(dd)
 
 ## set number of chains and iterations (values used in the analysis presented in the MS: ch=4, it=6000)
 ch=4
-it=6000
+it=2000
 
 ## data list for Stan
 datlist = list(N = N,                    # number of harvest episodes,
@@ -315,12 +317,12 @@ pc_true <- pc_est <- pc_lb <- pc_ub <- matrix(NA, nrow = N, ncol = K)
 
 for (n in 1:N) {  
   # calculate true prob of patch choice
-  pc_true[n,] <- softmax( WA[,dd$season_id[n],dd$gender_id[n]] + # intercept
-                                  fAge[ ,dd$age_cat[n]] + 
-                                  bIn *dd$income_s_complete[n] +
-                                  bDeI*dd$indegree_s[n] +
-                                  bDeO*dd$outdegree_s[n] +
-                                  bNh *dd$Nhunt_s[n] )
+  pc_true[n,] <- softmax( WA[ , dd$season_id[n], dd$gender_id[n]] + # intercept
+                           fAge[ , dd$age_cat[n]] + 
+                           bIn *dd$income_s_complete[n] +
+                           bDeI*dd$indegree_s[n] +
+                           bDeO*dd$outdegree_s[n] +
+                           bNh *dd$Nhunt_s[n] )
   
   # calculate estimate of posterior prob of patch choice
   A <- post_pc$WA[ , , dd$season_id[n], dd$gender_id[n]] + # intercept
@@ -375,19 +377,19 @@ for (n in 1:N) {
 
   # use true patch attraction intercepts to calculate true prob of harvest success
   hs_true[n] <- logistic ( WS[dd$patch_id[n], dd$season_id[n], dd$gender_id[n]] +
-                                  fAge[dd$patch_id[n], dd$age_cat[n]] +
-                                  bIn[dd$patch_id[n]] *dd$income_s_complete[n] + 
-                                  bDeI[dd$patch_id[n]]*dd$indegree_s[n] + 
-                                  bDeO[dd$patch_id[n]]*dd$outdegree_s[n] +
-                                  bNh[dd$patch_id[n]] *dd$Nhunt_s[n] )
+                            fAge[dd$patch_id[n], dd$age_cat[n]] +
+                            bIn[dd$patch_id[n]] * dd$income_s_complete[n] + 
+                            bDeI[dd$patch_id[n]] * dd$indegree_s[n] + 
+                            bDeO[dd$patch_id[n]] * dd$outdegree_s[n] +
+                            bNh[dd$patch_id[n]] * dd$Nhunt_s[n] )
   
   # use posterior attraction weights to calculate estimate of posterior prob of harvest success
   S <- post_hs$WS[ , dd$patch_id[n], dd$season_id[n], dd$gender_id[n]] +
-        post_hs$fAge[ ,dd$patch_id[n], dd$age_cat[n]] + 
-        post_hs$bIn[ ,dd$patch_id[n]] *post_hs$income_merge[,n] + 
-        post_hs$bDeI[ ,dd$patch_id[n]]*dd$indegree_s[n] +
-        post_hs$bDeO[ ,dd$patch_id[n]]*dd$outdegree_s[n] + 
-        post_hs$bNh[ ,dd$patch_id[n]] *dd$Nhunt_s[n]
+        post_hs$fAge[ , dd$patch_id[n], dd$age_cat[n]] + 
+        post_hs$bIn[ , dd$patch_id[n]] * post_hs$income_merge[ , n] + 
+        post_hs$bDeI[ , dd$patch_id[n]] * dd$indegree_s[n] +
+        post_hs$bDeO[ , dd$patch_id[n]] * dd$outdegree_s[n] + 
+        post_hs$bNh[ , dd$patch_id[n]] * dd$Nhunt_s[n]
   pr_hs_n <- logistic(S)
   hs_est[n] <- mean(pr_hs_n)
   hs_lb[n] <- rethinking::HPDI(pr_hs_n)[1]
@@ -450,7 +452,7 @@ for (g in 1:2) {
   for (s in 1:2) { 
     for (i in 1:length(x)) {
       A <- post_pc$WA[ ,  , s, g] + 
-            post_pc$fAge[,,fix_agecat] +
+            post_pc$fAge[ , , fix_agecat] +
             post_pc$bIn * x[i] + # loop through the range of income values set above
             post_pc$bDeI * fix_indegree +
             post_pc$bDeO * fix_outdegree +
@@ -461,7 +463,7 @@ for (g in 1:2) {
       pr_pc_ub[i, ,s,g] <- apply(pr_pc_n, 2, HPDI)[2,]
       
       S <- post_hs$WS[ ,  , s, g] + 
-            post_hs$fAge[,,fix_agecat] +
+            post_hs$fAge[ , , fix_agecat] +
             post_hs$bIn * x[i] + 
             post_hs$bDeI * fix_indegree +
             post_hs$bDeO * fix_outdegree +
@@ -487,15 +489,15 @@ for (g in 1:2) {
     
     for (k in 1:K) { 
       plot(1, 1, type = "n", xlim=c(min(x), max(x)), ylim=c(0,1), las=1,
-           xlab = xlab, ylab = "pr(choose)", cex.axis=0.9,
-           main = paste( title_s, title_g, sep=", "), cex.main=0.6, xaxt="n")
+           xlab = xlab, ylab = "pr(choose)", cex.axis=0.9, xaxt="n",
+           main = paste( title_s, title_g, sep=", "), cex.main=0.6)
       axis(1, at = c(-1.5, 0, 1.5))
       points(x, pr_pc_est[ ,k,s,g], type = "l", col=cols[k])
       polygon(c(x, rev(x)), c(pr_pc_lb[ ,k,s,g], rev(pr_pc_ub[ ,k,s,g])), col=col.alpha(cols[k], 0.2), border=NA)
       
       plot(1, 1, type = "n", xlim=c(min(x), max(x)), ylim=c(0,1), las=1,
-           xlab = xlab, ylab = "pr(success)", cex.axis=0.9,
-           main = paste( title_s, title_g, sep=", "), cex.main=0.6, xaxt="n")
+           xlab = xlab, ylab = "pr(success)", cex.axis=0.9, xaxt="n",
+           main = paste( title_s, title_g, sep=", "), cex.main=0.6)
       axis(1, at = c(-1.5, 0, 1.5))
       points(x, pr_hs_est[ ,k,s,g], type = "l", col=cols[k])
       polygon(c(x, rev(x)), c(pr_hs_lb[ ,k,s,g], rev(pr_hs_ub[ ,k,s,g])), col=col.alpha(cols[k], 0.2), border=NA)
