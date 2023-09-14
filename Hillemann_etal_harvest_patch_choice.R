@@ -1,13 +1,17 @@
 #______________________________________________________________________________________________________
 #______________________________________________________________________________________________________
 #
+# R and Stan code to simulate and analyse foraging trip data (patch choice and harvest success)
+# 
+# Repository available and maintained on Github and Data Dryad:
+# https://github.com/fhillemann/MSrepo_harvest_patch_choice.git
+# https://doi.org/10.5061/dryad.k3j9kd5dv 
+#
+# Accompanying manuscript:
 # Socio-economic predictors of Inuit hunting choices and their implications for climate change adaptation
 # F. Hillemann, B. A. Beheim, E. Ready
-#
-# Phil. Trans. Roy. Soc. B, 2023
-# 
-# R and Stan code to simulate and analyse foraging trip data (patch choice and harvest success)
-# contact: f.hillemann@web.de
+# Phil. Trans. R. Soc. B 2023, 378: 20220395. 
+# https://doi.org/10.1098/rstb.2022.0395
 #
 #______________________________________________________________________________________________________
 #______________________________________________________________________________________________________
@@ -21,14 +25,17 @@
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
+rm(list=ls())
+
 # all analyses reported in MS were conducted using R version 4.2.1 and Stan 2.21.0
 R.Version()$version.string
 stan_version()
 
-set.seed(79)
-set.seed(183)
-set.seed(152)
+seed <- 186
+set.seed(seed) # produces the output file data_seed186
 
+# seed <- 152
+# set.seed(152) # produces the output file data_seed152
 
 
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -38,8 +45,6 @@ set.seed(152)
 #                                              xxxx
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-
-rm(list=ls())
 
 ## packages and functions ####
 library(rstan) # instructions for downloading and installing RStan: https://mc-stan.org/users/interfaces/rstan.html
@@ -72,10 +77,25 @@ na2dummy <- function(data){
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx####
 #                                              xxxx
-# simulate data                                ####
+# load or simulate data                        ####
 #                                              xxxx
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 #xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+
+#__________________________________________________
+## load example data
+dd <- read.csv("dataset_seed186.csv")
+# or
+# dd <- read.csv("dataset_seed152.csv")
+
+# NOW, jump to line 285, section "fit models"
+# ALTERNATIVELY, use code below to simulate data
+
+
+#__________________________________________________
+#__________________________________________________
+## simulate data (and modify the parameters)
 
 N = 300              # N hunting trips
 K = 7                # K patch types
@@ -87,10 +107,14 @@ Y_hs <- rep(NA, N)   # Y response harvest success
 #__________________________________________________
 ## create harvest trips
 dd <- data.frame( trip_id = c(1:N) ,
-                  season = rbinom(N, 1, 0.6)) # ice and snow Y/N
+                  season_id = rbinom(N, 1, 0.4) + 1) # 1-snow/ice, 2-ice-free
 
 # rename season, reflecting how data is most likely entered
-dd$season <- ifelse( dd$season == 0, "summer", "winter" )
+dd$season <- ifelse( dd$season_id == 1, "ice", "ice-free")
+
+# create hunt group size + standardise
+dd$Nhunt <- sample(c(1:10), size=N, replace=TRUE, prob = (dgeom(c(1:10), prob=0.3)) )
+dd$Nhunt_s <- (dd$Nhunt - mean(dd$Nhunt)) / sd(dd$Nhunt)
 
 
 
@@ -127,27 +151,15 @@ ppl$outdegree_s <- (ppl$outdegree - mean(ppl$outdegree) ) / sd(ppl$outdegree)
 
 
 #__________________________________________________
-## send people harvesting
+## send people harvesting, i.e. draw focal IDs
 dd$j_id <- c(sample( c(1:J), size=N, replace=TRUE, prob=rep(1/J, J) ) ) 
 dd$age_cat <- ppl$age_cat[match(dd$j_id, ppl$j_id)]
 dd$gender <- ppl$gender[match(dd$j_id, ppl$j_id)]
+dd$gender_id = ifelse( dd$gender=="m", 1 , 2 ) # 1-male, 2-female
 dd$income_s <- ppl$income_s[match(dd$j_id, ppl$j_id)]
 dd$indegree_s <- ppl$indegree_s[match(dd$j_id, ppl$j_id)]
 dd$outdegree_s <- ppl$outdegree_s[match(dd$j_id, ppl$j_id)]
 
-# create hunt group size + standardise
-dd$Nhunt <- sample(c(1:10), size=N, replace=TRUE, prob = (dgeom(c(1:10), prob=0.3)) )
-dd$Nhunt_s <- (dd$Nhunt - mean(dd$Nhunt)) / sd(dd$Nhunt)
-
-
-#__________________________________________________
-# prepare data for Stan
-# instead of character strings, Stan needs integer IDs as input
-# e.g., if patch data were entered as "winter marine" etc, or hunters j_id as "ID01" etc
-# dd$patch_id <- as.integer(as.factor( dd$patch_cat )) 
-# dd$hunter_id <- as.integer(as.factor( dd$j_id ))
-dd$season_id <- ifelse( dd$season=="winter", 1 , 2 ) # 1-snow/ice, 2-ice-free
-dd$gender_id = ifelse( dd$gender=="m", 1 , 2 ) # 1-male, 2-female
 
 
 #__________________________________________________
@@ -239,7 +251,7 @@ dd$harvest <- Y_hs
 
 
 #__________________________________________________
-## missing value imputation in Stan
+## missing values
 
 # realistically, we may not have all information available for everyone
 # randomly choose some individuals with incomplete data (here: income)
@@ -250,7 +262,9 @@ j_id_incomplete <- sample(J, size=sample(2,1))
 ppl$income_s[ppl$j_id %in% j_id_incomplete] <- NA
 dd$income_s[dd$j_id %in% ppl$j_id[is.na(ppl$income_s)] ] <- NA
 
-# store count of missing values (missN) and index of missing values (missDEX)
+# for missing value imputation in Stan, we want to store
+# missN - count of missing values, and
+# missDEX - index of missing values
 names(which(colSums(is.na(dd)) > 0))
 missn_income <- sum(is.na(dd$income_s))
 missdex_income <- which(is.na(dd$income_s))
@@ -258,6 +272,10 @@ missdex_income <- which(is.na(dd$income_s))
 # replace NAs with 999 (or any other arbitraty number)
 dd <- na2dummy(dd)
 
+
+#__________________________________________________
+# optional: save data
+# write.csv(dd, file = paste0("dataset_seed", seed, ".csv"))
 
 
 
@@ -273,7 +291,17 @@ dd <- na2dummy(dd)
 ch=4
 it=2000
 
-## data list for Stan
+
+#__________________________________________________
+# prepare data for Stan
+
+# (1) Stan needs integer IDs as input instead of character strings
+# e.g., if patch data were entered as "winter marine" etc, or hunters j_id as "ID01" etc
+# dd$patch_id <- as.integer(as.factor( dd$patch_cat )) 
+# dd$hunter_id <- as.integer(as.factor( dd$j_id ))
+# similarly, we use dd$season_id (1 for snow/ice, 2 for ice-free) and dd$gender_id (1 for male, 2 for female)
+
+# (2) Stan needs data in list format
 datlist = list(N = N,                    # number of harvest episodes,
                K = K,                    # number of patches 
                Y_pc = dd$patch_id,       # patch choice ID
@@ -289,6 +317,7 @@ datlist = list(N = N,                    # number of harvest episodes,
                indegree = dd$indegree_s, 
                outdegree = dd$outdegree_s, 
                Nhunt = dd$Nhunt_s) 
+
 
 
 #__________________________________________________
@@ -339,7 +368,7 @@ for (n in 1:N) {
 }
 
 
-## inspect perfromance
+## inspect performance
 plot(pc_true, pc_est, xlim = c(0, 0.8), ylim = c(0, 0.8),
   xlab = "true probability of choice", ylab = "estimated probability of choice",
   main = "patch choice model, simulated parameter recovery")
@@ -398,7 +427,7 @@ for (n in 1:N) {
 }
 
 
-## inspect perfromance
+## inspect performance
 plot(hs_true, hs_est, xlim = c(0, 1), ylim = c(0, 1),
   xlab = "true probability of success", ylab = "estimated probability of success",
   main = "harvest success model, simulated parameter recovery")
