@@ -15,7 +15,7 @@ This manuscript is part of the special issue ‘Climate change adaptation needs 
 
 ### Description of the file structure
 
-The repository includes Stan files to reproduce the patch choice model and the harvest success model and R code to simulate and analyse harvest trip data. 
+The repository includes R code files to simulate and analyse harvest trip data, and Stan files to reproduce the patch choice model and the harvest success model. 
 
 The R code file also contains information on prerequisites, and code sections to generate and save model summaries (table) and visualisations used in the manuscript.
 
